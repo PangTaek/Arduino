@@ -1,0 +1,118 @@
+#include <stdio.h>
+#include <DHT.h>
+#include <Adafruit_NeoPixel.h>
+#include <avr/power.h>
+
+//--------------↓FAN 모듈↓--------------
+int fan_relay = 24;
+//--------------↑FAN 모듈↑--------------
+
+//--------------↓네오픽셀↓--------------
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(4, 22, NEO_GRB + NEO_KHZ800);   
+//--------------↑네오픽셀↑--------------
+
+//--------------↓워터펌프↓--------------
+int relay = 26;
+//--------------↑워터펌프↑-------------
+
+//--------------↓온습도센서모듈↓--------------
+DHT dht(A2, DHT11);
+//--------------↑온습도센서모듈↑--------------
+
+//--------------↓RTC 모듈↓--------------
+
+//--------------↑RTC 모듈↑--------------
+
+void setup() {
+   // 시리얼통신을 9600bps로 시작
+   Serial.begin(9600);
+   
+   //--------------↓FAN 모듈↓--------------
+   pinMode(fan_relay, OUTPUT);
+   //--------------↑FAN 모듈↑--------------
+
+   //--------------↓RTC 모듈↓--------------
+   
+   //--------------↑RTC 모듈↑--------------
+
+   //--------------↓온습도센서모듈↓--------------
+   dht.begin();
+   //--------------↑온습도센서모듈↑--------------
+
+   //--------------↓워터펌프↓--------------
+   pinMode(relay, OUTPUT);
+   //--------------↑워터펌프↑-------------
+
+   //--------------↓네오픽셀↓--------------
+   strip.setBrightness(180);    //  BRIGHTNESS 만큼 밝기 설정 
+   strip.begin();                      //  Neopixel 제어를 시작
+   strip.show();                       //  Neopixel 동작 초기화 합니다
+   //--------------↑네오픽셀↑--------------
+}  
+  
+void loop() {  
+  //--------------↓토양수분센↓--------------
+   // soil_humidity : 토양습도
+   int soil_humidity = analogRead(A0);
+   // 0~1023의 값으로 출력됨.
+   // 물컵 : 약 400
+   // 일반 : 약 1023
+   // 1023 -> 0, 400 -> 100 으로 매핑
+   int map_soil_humi = map(soil_humidity,1023, 400, 0, 100);
+   Serial.print("soil_humidity : ");
+   Serial.println(map_soil_humi);
+   //--------------↑토양수분센↑--------------
+
+   //--------------↓RTC 모듈↓--------------
+   
+   //--------------↑RTC 모듈↑--------------
+
+   
+   //--------------↓조도센서↓--------------
+   int cds = analogRead(A1);
+   Serial.print("CDSM : ");
+   Serial.println(cds);
+   //--------------↑조도센서↑--------------
+
+   //--------------↓온습도센서모듈↓--------------
+   int temp = dht.readTemperature();
+   int humi = dht.readHumidity();
+
+   Serial.print("temperature : ");
+   Serial.println(temp);
+   Serial.print("humiditiy : ");
+   Serial.println(humi);
+   //--------------↑온습도센서모듈↑--------------
+
+   //--------------↓워터펌프↓--------------
+   digitalWrite(relay, HIGH);
+   delay(5000);
+   digitalWrite(relay, LOW);
+   delay(3000);
+   //--------------↑워터펌프↑-------------
+
+   //--------------↓FAN 모듈↓--------------
+   digitalWrite(fan_relay, HIGH);
+   delay(5000);
+   digitalWrite(fan_relay, LOW);
+   delay(3000);
+   //--------------↑FAN 모듈↑--------------
+
+   //--------------↓네오픽셀↓--------------
+   strip.begin();
+   strip.setPixelColor(0, 255, 0, 0);          //  Neopixel 색상 설정 ( 첫번째 소자위치 , 색상설정(Red) , 0 , 0 )
+   strip.setPixelColor(1, 0, 255, 0);          //  ( 두번째 소자위치 , 0 , 색상설정(Green) , 0 )
+   strip.setPixelColor(2, 0, 0, 255);          //  ( 세번째 소자위치 , 0 , 0 , 색상설정(Blue) )
+   strip.setPixelColor(3, 255, 255, 255);      //  ( 네번째 소자위치 , (Red) , (Green) , (Blue) ) 3가지 색을 다 킨다면 White가 켜짐
+   strip.show();                               //  LED가 켜지는 동작을 하게 합니다
+   delay(2000);
+   strip.setPixelColor(0, 0, 0, 0);
+   strip.setPixelColor(1, 0, 0, 0);
+   strip.setPixelColor(2, 0, 0, 0);
+   strip.setPixelColor(3, 0, 0, 0);
+   strip.show();
+   delay(2000); 
+   //--------------↑네오픽셀↑--------------
+
+   delay(1000);
+}
