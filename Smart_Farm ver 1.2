@@ -1,0 +1,205 @@
+#include <ESP8266WiFi.h>
+#include <FirebaseESP8266.h>
+#include <stdio.h>
+#include <DHT.h>
+#include <Adafruit_NeoPixel.h>
+//#include <avr/power.h>
+
+#ifndef STASSID
+#define STASSID "kyu-wifi" //와이파이 검색했을때 뜨는 이름
+#define STAPSK  "" //패스워드
+#endif
+
+const char* ssid = STASSID;
+const char* password = STAPSK;
+// 승규의 파이어베이스
+//const char* FIREBASE_HOST = "smartfarm-76f72-default-rtdb.firebaseio.com";
+//const char* FIREBASE_AUTH = "96dfOYEHplPnzBiOHmj4g0bl1sJEbTi258GmqSER";
+// 내 파이어베이스
+const char* FIREBASE_HOST = "test01-226dc-default-rtdb.firebaseio.com";       
+const char* FIREBASE_AUTH = "kfcHxVUv2MXo6lZA79bZWmCfI5WjSQRVqpTf3XXS";
+WiFiClient client;
+FirebaseData fbdo;
+FirebaseJson json;
+
+int fan_relay = 24;                                                        // Fan_Module
+int relay = 26;                                                            // WaterPump
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(4, 22, NEO_GRB + NEO_KHZ800);  // NeoPixel
+DHT dht(0, DHT11);
+
+typedef struct{
+  int year;
+  int month;
+  int day;
+  int hour;
+  int minute;
+  int second;
+}Nocktime;
+
+// typedef struct{
+//   int map_soil_humidity;
+//   int cds;
+//   int temperture;
+//   int humidity;
+// }sencerData
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println();
+  Serial.print("connecting to ");
+  Serial.println(ssid);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+  Firebase.reconnectWiFi(true);
+  fbdo.setBSSLBufferSize(1024, 1024);
+  fbdo.setResponseSize(1024);
+
+  Firebase.setReadTimeout(fbdo, 1000 * 60);
+  Firebase.setwriteSizeLimit(fbdo, "tiny");
+  Firebase.setFloatDigits(2);
+  Firebase.setDoubleDigits(6);
+
+  pinMode(relay, OUTPUT);      // WaterPump
+  pinMode(fan_relay, OUTPUT);  // Fan_Module
+  dht.begin();                 // Tmperture & Humiditiy_Module
+
+  // NeoPixel
+  strip.setBrightness(180);  //  BRIGHTNESS 만큼 밝기 설정
+  strip.begin();             //  Neopixel 제어를 시작
+  strip.show();              //  Neopixel 동작 초기화 합니다
+}
+  
+
+void loop() {
+  // sencerData sd;
+  Nocktime nt;
+  if (millis() == 5 || millis() % 3600 == 0) {
+    int soil_humidity = analogRead(A0);
+    int map_soil_humidity = map(soil_humidity, 1023, 400, 0, 100);  // 1023(물X) -> 0, 400(물속) -> 100
+    // sd.map_soil_humidity = map_soil_humidity;
+    Firebase.pushInt(fbdo, "/Soil_Humidity", map_soil_humidity);
+    Serial.print("soil_humidity : ");
+    Serial.println(map_soil_humidity);
+
+    int cds = analogRead(A0);
+    // senerData.cds = cds;
+    Firebase.pushInt(fbdo, "/Bright", cds);
+    Serial.print("CDSM : ");
+    Serial.println(cds);
+
+    int temperture = dht.readTemperature();
+    int humidity = dht.readHumidity();
+    // sd.temperture = temperture;
+    // sd.humidity = humidity;
+    Firebase.pushInt(fbdo, "/Temperture", temperture);
+    //firebase.pushInt(fdbo, "/Humidity", humidity);
+    Serial.print("temperature : ");
+    Serial.println(temperture);
+    Serial.print("humiditiy : ");
+    Serial.println(humidity);
+
+    if(get_nocktime(nt)){
+    Serial.print("year: ");
+    Serial.println(nt.year);
+    Serial.print("month: ");
+    Serial.println(nt.month);
+    Serial.print("day: ");
+    Serial.println(nt.day);
+    Serial.print("hour: ");
+    Serial.println(nt.hour);
+    Serial.print("minute: ");
+    Serial.println(nt.minute);
+    Serial.print("second: ");
+    Serial.println(nt.second);
+    }
+  }
+}
+
+bool get_nocktime(Nocktime &t){
+  //클라이언트와 서버와 커넥트
+  if (!client.connect("google.com", 80)) {
+    Serial.println("connection failed");
+    return false;
+  }
+  client.print("HEAD / HTTP/1.1\r\n\r\n");
+
+  //서버로부터 응답이 있을때까지 대기하겠다..
+  //언제까지 기다려야하나요..?
+  //timeout!
+  unsigned long timeout = millis(); //생존시간
+  while(1){
+    if(client.available()) break;
+    if(millis() - timeout > 10000) break;
+  }
+
+  //응답이 날라오는 부분!
+  bool isCollect = false;
+  Serial.println("request sent");
+
+  int count = 1;
+  while(client.available()){
+    String data = client.readStringUntil('\n'); //readline();
+    // Date: Fri, 25 Nov 2022 04:59:46 GMT
+    // 01234567890123456789012345678901234
+    if(data.indexOf("Date: ") != -1){
+      isCollect = true;
+      Serial.println(data);
+      //Serial.prtinln(data.substring(6, 9));          day of the week
+      int day = data.substring(11, 13).toInt();      //day
+      int month = 0;                                 //month
+      //Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec
+      String m = data.substring(14, 17);
+      if(m == "Jan") { month = 1; }
+      else if(m == "Feb")   month = 2; 
+      else if(m == "Mar")   month = 3; 
+      else if(m == "Apr")   month = 4; 
+      else if(m == "May")   month = 5; 
+      else if(m == "Jun")   month = 6; 
+      else if(m == "Jul")   month = 7; 
+      else if(m == "Aug")   month = 8; 
+      else if(m == "Sep")   month = 9; 
+      else if(m == "Oct")   month = 10; 
+      else if(m == "Nov")   month = 11; 
+      else if(m == "Dec")   month = 12;
+      int year = data.substring(18, 22).toInt();     //year
+      int hour = data.substring(23, 25).toInt();     //hour
+      int minute = data.substring(26, 28).toInt();   //minute
+      int second = data.substring(29, 31).toInt();   //second
+      
+      // KMT로 교정(KMT = GMT + 9hours)
+      int dayOfMonth[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+      hour += 9;
+      if(hour > 24){
+        hour -= 24;
+        day++;
+        int yoondal = 0;
+        if(year % 4 == 0 && month == 2) yoondal = 1;
+        if(day > dayOfMonth[month - 1] + yoondal){
+          day -= dayOfMonth[month - 1] + yoondal;
+          month++;
+          if(month > 12){
+            month -= 12;
+            year++;
+          }
+        }
+      }
+      t.year = year;
+      t.month = month;
+      t.day = day;
+      t.hour = hour;
+      t.minute = minute;
+      t.second = second;
+    }
+  }
+  return isCollect;
+}
